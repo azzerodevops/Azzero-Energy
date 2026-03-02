@@ -73,7 +73,7 @@ export function FilesClient({ analysisId, files }: { analysisId: string; files: 
       setUploading(false);
       e.target.value = "";
     }
-  }, [analysisId, router, supabase.storage]);
+  }, [analysisId, router, supabase]);
 
   async function handleDownload(file: FileRow) {
     const { data } = await supabase.storage.from("analysis-files").createSignedUrl(file.storage_path, 60);
