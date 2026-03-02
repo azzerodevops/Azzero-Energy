@@ -1,0 +1,10 @@
+apps/optimizer
+Loghi e video
+METODOLOGIA_CALCOLO.md
+AZZEROCO2_PROJECT_MAP.md
+DESIGN_REFERENCE.md
+docker-compose.yml
+playwright.config.ts
+**/__pycache__
+**/*.pyc
+.claude

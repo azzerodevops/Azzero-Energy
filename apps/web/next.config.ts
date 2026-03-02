@@ -16,6 +16,7 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   transpilePackages: ["@azzeroco2/shared", "@azzeroco2/db"],
   images: {
     formats: ["image/avif", "image/webp"],
