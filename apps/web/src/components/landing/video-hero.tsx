@@ -17,7 +17,7 @@ export function VideoHero() {
         className="absolute inset-0 h-full w-full object-cover"
       >
         <source
-          src="/videos/12808704_1920_1080_25fps.mp4"
+          src="/videos/hero.mp4"
           type="video/mp4"
         />
       </video>
