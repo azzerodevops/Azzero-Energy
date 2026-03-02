@@ -212,11 +212,14 @@ export async function getDashboardChartData(): Promise<
             .select("status")
             .in("analysis_id", analysisIds)
         : Promise.resolve({ data: [] as { status: string }[] }),
-      supabase
-        .from("scenario_results")
-        .select(
-          "total_savings_annual, scenario_id, scenarios(analysis_id, analyses(site_id, sites(name)))"
-        ),
+      analysisIds.length > 0
+        ? supabase
+            .from("scenario_results")
+            .select(
+              "total_savings_annual, scenario_id, scenarios!inner(analysis_id, analyses!inner(site_id, sites(name)))"
+            )
+            .in("scenarios.analysis_id", analysisIds)
+        : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
     ]);
 
     // --- Analysis per month (last 12 months) ---
@@ -255,12 +258,9 @@ export async function getDashboardChartData(): Promise<
     // --- Top 5 sites by savings (filtered by org's analyses) ---
     const savingsBySite = new Map<string, number>();
 
-    for (const r of resultsRes.data ?? []) {
+    const resultsData = "data" in resultsRes ? resultsRes.data : resultsRes;
+    for (const r of (resultsData ?? []) as Array<Record<string, unknown>>) {
       const scenarios = r.scenarios as unknown as Record<string, unknown> | null;
-      const analysisId = scenarios?.analysis_id as string | undefined;
-
-      // Only include results from this org's analyses
-      if (!analysisId || !analysisIds.includes(analysisId)) continue;
 
       const analyses = scenarios?.analyses as unknown as Record<string, unknown> | null;
       const sites = analyses?.sites as unknown as Record<string, unknown> | null;

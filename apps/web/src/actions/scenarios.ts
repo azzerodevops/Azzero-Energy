@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { getAuthContext } from "@/lib/auth/context";
+import { getAuthContext, verifyAnalysisOrg } from "@/lib/auth/context";
 import {
   createScenarioSchema,
   updateScenarioSchema,
@@ -16,23 +16,6 @@ type ActionResult<T> =
 function revalidateScenarioPaths(analysisId: string) {
   revalidatePath(`/dashboard/analyses/${analysisId}/scenarios`);
   revalidatePath(`/dashboard/analyses/${analysisId}`);
-}
-
-/**
- * Verifies that the given analysis belongs to the user's current org.
- * Returns the analysis org_id if valid, or null if not.
- */
-async function verifyAnalysisOrg(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  analysisId: string,
-  orgId: string,
-): Promise<boolean> {
-  const { data } = await supabase
-    .from("analyses")
-    .select("organization_id")
-    .eq("id", analysisId)
-    .single();
-  return data?.organization_id === orgId;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,9 +297,22 @@ export async function launchOptimization(
 // 8. getScenarioStatus
 // ---------------------------------------------------------------------------
 export async function getScenarioStatus(scenarioId: string) {
-  await getAuthContext(); // ensures authenticated
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false as const, error: "Nessuna organizzazione selezionata" };
 
   const supabase = await createClient();
+
+  // Verify scenario belongs to org through analysis
+  const { data: scenario } = await supabase
+    .from("scenarios")
+    .select("analysis_id")
+    .eq("id", scenarioId)
+    .single();
+  if (!scenario) return { success: false as const, error: "Scenario non trovato" };
+  if (!(await verifyAnalysisOrg(supabase, scenario.analysis_id, orgId))) {
+    return { success: false as const, error: "Accesso negato" };
+  }
 
   const { data, error } = await supabase
     .from("scenarios")
@@ -341,7 +337,22 @@ export interface ValidationResult {
 export async function validateScenario(
   scenarioId: string,
 ): Promise<ActionResult<ValidationResult>> {
-  await getAuthContext(); // ensures authenticated
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
+
+  const supabase = await createClient();
+
+  // Verify scenario belongs to org through analysis
+  const { data: scenario } = await supabase
+    .from("scenarios")
+    .select("analysis_id")
+    .eq("id", scenarioId)
+    .single();
+  if (!scenario) return { success: false, error: "Scenario non trovato" };
+  if (!(await verifyAnalysisOrg(supabase, scenario.analysis_id, orgId))) {
+    return { success: false, error: "Accesso negato" };
+  }
 
   try {
     const response = await fetch(
@@ -369,18 +380,24 @@ export async function validateScenario(
 export async function getScenarioErrorMessage(
   scenarioId: string,
 ): Promise<ActionResult<{ error_message: string | null }>> {
-  await getAuthContext(); // ensures authenticated
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
 
   const supabase = await createClient();
 
-  const { data, error } = await supabase
+  // Verify scenario belongs to org through analysis
+  const { data: scenario } = await supabase
     .from("scenarios")
-    .select("error_message")
+    .select("analysis_id, error_message")
     .eq("id", scenarioId)
     .single();
-  if (error) return { success: false, error: error.message };
+  if (!scenario) return { success: false, error: "Scenario non trovato" };
+  if (!(await verifyAnalysisOrg(supabase, scenario.analysis_id, orgId))) {
+    return { success: false, error: "Accesso negato" };
+  }
 
-  return { success: true, data: { error_message: data.error_message ?? null } };
+  return { success: true, data: { error_message: scenario.error_message ?? null } };
 }
 
 // ---------------------------------------------------------------------------
@@ -457,9 +474,22 @@ export async function deleteTechConfig(
 // 11. getTechConfigs
 // ---------------------------------------------------------------------------
 export async function getTechConfigs(scenarioId: string) {
-  await getAuthContext(); // ensures authenticated
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false as const, error: "Nessuna organizzazione selezionata" };
 
   const supabase = await createClient();
+
+  // Verify scenario belongs to org through analysis
+  const { data: scenario } = await supabase
+    .from("scenarios")
+    .select("analysis_id")
+    .eq("id", scenarioId)
+    .single();
+  if (!scenario) return { success: false as const, error: "Scenario non trovato" };
+  if (!(await verifyAnalysisOrg(supabase, scenario.analysis_id, orgId))) {
+    return { success: false as const, error: "Accesso negato" };
+  }
 
   const { data, error } = await supabase
     .from("scenario_tech_configs")

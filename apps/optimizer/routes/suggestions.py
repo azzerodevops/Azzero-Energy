@@ -52,7 +52,8 @@ async def get_suggestions(analysis_id: str):
             "name, category, capex_per_kw"
         ).execute()
 
-        site = analysis.data.get("sites") or {}
+        site_raw = analysis.data.get("sites") or {}
+        site = site_raw[0] if isinstance(site_raw, list) else site_raw
         total_consumption = sum(
             float(d.get("annual_consumption_mwh", 0))
             for d in (demands.data or [])

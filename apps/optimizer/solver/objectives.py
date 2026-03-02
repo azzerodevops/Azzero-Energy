@@ -105,32 +105,20 @@ def set_co2_objective(
 
     prob += pulp.lpSum(co2_terms), "total_co2_emissions"
 
-    # Optional budget constraint
+    # Optional budget constraint — limits TOTAL CAPEX (initial investment),
+    # not annualized costs.  The user sets budget_limit as the maximum
+    # upfront capital expenditure (e.g. 5 000 000 EUR).
     if budget_limit is not None and budget_limit > 0:
-        cost_terms = []
+        capex_terms = []
         for tech in data.technologies:
             tid = tech.id
             if tid not in v.cap:
                 continue
             if not tech.is_existing:
-                annuity = crf(data.wacc, tech.lifetime)
-                cost_terms.append(tech.capex_per_kw * annuity * v.cap[tid])
-            cost_terms.append(tech.maintenance_annual_per_kw * v.cap[tid])
+                capex_terms.append(tech.capex_per_kw * v.cap[tid])
 
-        for rt_str, buy_vars in v.buy.items():
-            r = resource_map.get(rt_str)
-            if r:
-                cost_terms.append(pulp.lpSum(buy_vars) * r.buying_price / 1000)
-
-        for rt_str, sell_vars in v.sell.items():
-            r = resource_map.get(rt_str)
-            if r and r.selling_price > 0:
-                cost_terms.append(-pulp.lpSum(sell_vars) * r.selling_price / 1000)
-
-        # Include thermal baseline costs in budget constraint
-        cost_terms.extend(_thermal_buy_cost_terms(v, data, resource_map))
-
-        prob += (pulp.lpSum(cost_terms) <= budget_limit, "budget_constraint")
+        if capex_terms:
+            prob += (pulp.lpSum(capex_terms) <= budget_limit, "budget_constraint")
 
 
 # ---------------------------------------------------------------------------

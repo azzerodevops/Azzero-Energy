@@ -1,24 +1,11 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { getAuthContext } from "@/lib/auth/context";
+import { getAuthContext, verifyAnalysisOrg } from "@/lib/auth/context";
 import { createResourceSchema, updateResourceSchema } from "@azzeroco2/shared";
 import { revalidatePath } from "next/cache";
 
 type ActionResult<T> = { success: true; data: T } | { success: false; error: string };
-
-async function verifyAnalysisOrg(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  analysisId: string,
-  orgId: string,
-): Promise<boolean> {
-  const { data } = await supabase
-    .from("analyses")
-    .select("organization_id")
-    .eq("id", analysisId)
-    .single();
-  return data?.organization_id === orgId;
-}
 
 export async function createResource(input: unknown): Promise<ActionResult<Record<string, unknown>>> {
   const context = await getAuthContext();

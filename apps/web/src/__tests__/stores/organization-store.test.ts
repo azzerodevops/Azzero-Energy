@@ -6,6 +6,7 @@ const mockOrg1 = {
   name: "AzzeroCO2 Srl",
   slug: "azzeroco2-srl",
   plan: "premium",
+  role: "admin",
 };
 
 const mockOrg2 = {
@@ -13,6 +14,7 @@ const mockOrg2 = {
   name: "Energetica SpA",
   slug: "energetica-spa",
   plan: "standard",
+  role: "member",
 };
 
 const mockOrg3 = {
@@ -20,6 +22,7 @@ const mockOrg3 = {
   name: "GreenPower",
   slug: "greenpower",
   plan: "free",
+  role: "member",
 };
 
 describe("useOrganizationStore", () => {

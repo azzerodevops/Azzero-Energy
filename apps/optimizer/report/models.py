@@ -14,8 +14,8 @@ class SiteInfo(BaseModel):
     address: str | None = None
     city: str | None = None
     province: str | None = None
-    lat: float | None = None
-    lng: float | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 class AnalysisInfo(BaseModel):

@@ -124,10 +124,72 @@ export async function getAuthContext(): Promise<AuthContext> {
 }
 
 // ---------------------------------------------------------------------------
+// verifyAnalysisOrg
+// ---------------------------------------------------------------------------
+
+/**
+ * Verifies that the given analysis belongs to the specified organization.
+ * Returns true if valid, false otherwise.
+ */
+export async function verifyAnalysisOrg(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  analysisId: string,
+  orgId: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("analyses")
+    .select("organization_id")
+    .eq("id", analysisId)
+    .single();
+  return data?.organization_id === orgId;
+}
+
+// ---------------------------------------------------------------------------
 // setCurrentOrganization
 // ---------------------------------------------------------------------------
 
-export async function setCurrentOrganization(orgId: string): Promise<void> {
+export async function setCurrentOrganization(
+  orgId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const supabase = await createClient();
+
+  // Verify the user is authenticated
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user || !user.email) {
+    return { success: false, error: "Non autenticato" };
+  }
+
+  const isAdmin = user.email.endsWith(AZZEROCO2_DOMAIN);
+
+  // Admin users (@azzeroco2.it) can access any organization
+  if (!isAdmin) {
+    // Regular users: verify membership in the target organization
+    const { data: membership, error: memberError } = await supabase
+      .from("user_organizations")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("organization_id", orgId)
+      .maybeSingle();
+
+    if (memberError) {
+      return {
+        success: false,
+        error: "Errore nella verifica dell'accesso all'organizzazione",
+      };
+    }
+
+    if (!membership) {
+      return {
+        success: false,
+        error: "Non hai accesso a questa organizzazione",
+      };
+    }
+  }
+
   const cookieStore = await cookies();
 
   cookieStore.set(CURRENT_ORG_COOKIE, orgId, {
@@ -137,4 +199,6 @@ export async function setCurrentOrganization(orgId: string): Promise<void> {
     path: "/",
     maxAge: 60 * 60 * 24 * 365, // 1 year
   });
+
+  return { success: true };
 }

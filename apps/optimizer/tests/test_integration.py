@@ -31,7 +31,7 @@ def test_optimization_no_demands():
 
     result = run_optimization(data, config)
     assert result.status == "failed"
-    assert "No energy demands" in result.error_message
+    assert "domanda energetica" in result.error_message.lower() or "No energy demands" in result.error_message
 
 
 def test_optimization_no_technologies():
@@ -47,4 +47,4 @@ def test_optimization_no_technologies():
 
     result = run_optimization(data, config)
     assert result.status == "failed"
-    assert "No technologies" in result.error_message
+    assert "risorsa energetica" in result.error_message.lower() or "No technologies" in result.error_message

@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { createBrowserClient } from "@supabase/ssr";
+import { updateOrganization } from "@/actions/auth";
 
 const PLAN_LABELS: Record<string, string> = {
   free: "Free",
@@ -45,11 +45,6 @@ export function OrganizationClient({ organization, members, currentUserRole }: O
   const [saving, setSaving] = useState(false);
   const isAdmin = currentUserRole === "admin";
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
-
   async function handleSave() {
     if (!name.trim()) {
       toast.error("Il nome non può essere vuoto");
@@ -57,12 +52,11 @@ export function OrganizationClient({ organization, members, currentUserRole }: O
     }
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from("organizations")
-        .update({ name: name.trim() })
-        .eq("id", organization.id);
-
-      if (error) { toast.error(error.message); return; }
+      const result = await updateOrganization(organization.id, { name: name.trim() });
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
       toast.success("Organizzazione aggiornata");
       router.refresh();
     } finally {

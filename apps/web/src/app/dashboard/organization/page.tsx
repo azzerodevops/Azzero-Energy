@@ -1,38 +1,41 @@
 export const dynamic = "force-dynamic";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAuthContext } from "@/lib/auth/context";
 import { redirect } from "next/navigation";
 import { OrganizationClient } from "./organization-client";
 
 export default async function OrganizationPage() {
+  let context;
+  try {
+    context = await getAuthContext();
+  } catch {
+    redirect("/auth/login");
+  }
+
+  const orgId = context.currentOrganizationId;
+  if (!orgId) redirect("/dashboard");
+
+  // Determine the user's role for this org from context
+  const currentOrg = context.organizations.find((o) => o.id === orgId);
+  const currentUserRole = currentOrg?.role ?? (context.isAzzeroCO2Admin ? "admin" : "viewer");
+
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
 
-  // Get user's organization membership
-  const { data: membership } = await supabase
-    .from("user_organizations")
-    .select("organization_id, role")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  if (!membership) redirect("/dashboard");
-
-  // Fetch organization details
+  // Fetch organization details using the selected org ID
   const { data: organization } = await supabase
     .from("organizations")
     .select("id, name, slug, plan, created_at")
-    .eq("id", membership.organization_id)
+    .eq("id", orgId)
     .single();
 
   if (!organization) redirect("/dashboard");
 
-  // Fetch members
+  // Fetch members for this org
   const { data: members } = await supabase
     .from("user_organizations")
     .select("role, joined_at, users(id, email, full_name)")
-    .eq("organization_id", membership.organization_id)
+    .eq("organization_id", orgId)
     .order("joined_at");
 
   const normalizedMembers = (members ?? []).map((m) => ({
@@ -49,7 +52,7 @@ export default async function OrganizationPage() {
         joinedAt: string;
         user: { id: string; email: string; full_name: string | null } | null;
       }>}
-      currentUserRole={membership.role}
+      currentUserRole={currentUserRole}
     />
   );
 }

@@ -16,7 +16,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/solve", tags=["solver"])
 
-# In-memory store for results (simple approach, production would use Redis)
+# In-memory store for results (simple approach, production would use Redis).
+# TODO(BUG-001): This cache is per-worker.  When running with --workers > 1,
+#   a GET /results may hit a different worker than the POST /solve that
+#   populated it.  The DB fallback in the `results()` endpoint mitigates this,
+#   but for consistency consider migrating to the file-based job_store
+#   (see utils/job_store.py) or Redis.  Run the optimizer with --workers 1
+#   until this is fully addressed.
 _results_cache: dict[str, OptimizationResult] = {}
 
 # Italian-language error messages for common solver failures
@@ -226,6 +232,8 @@ async def results(scenario_id: str):
         payback_years=float(sr_data["payback_years"]) if sr_data.get("payback_years") else None,
         irr=float(sr_data["irr"]) if sr_data.get("irr") else None,
         npv=float(sr_data["npv"]) if sr_data.get("npv") else None,
-        co2_reduction_percent=float(sr_data["co2_reduction_percent"] or 0),
+        co2_baseline=float(sr_data.get("co2_baseline") or 0),
+        co2_optimized=float(sr_data.get("co2_optimized") or 0),
+        co2_reduction_percent=float(sr_data.get("co2_reduction_percent") or 0),
         tech_results=tech_results,
     )

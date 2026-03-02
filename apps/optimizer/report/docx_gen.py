@@ -158,7 +158,7 @@ def generate_docx(data: ReportData) -> Path:
         ["Indirizzo", site.address or "\u2014"],
         ["Citt\u00e0", site.city or "\u2014"],
         ["Provincia", site.province or "\u2014"],
-        ["Coordinate", f"{site.lat}, {site.lng}" if site.lat else "\u2014"],
+        ["Coordinate", f"{site.latitude}, {site.longitude}" if site.latitude else "\u2014"],
         ["Anno di riferimento", str(data.analysis.year)],
         ["WACC", _fmt_pct(data.analysis.wacc) if data.analysis.wacc else "\u2014"],
     ])

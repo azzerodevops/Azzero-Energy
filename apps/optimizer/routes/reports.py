@@ -1,9 +1,12 @@
-"""Report generation API routes."""
+"""Report generation API routes.
+
+Job state is persisted to /tmp/azzeroco2_jobs/ via utils.job_store so that
+multiple uvicorn workers can share state (BUG-001 fix).
+"""
 
 from __future__ import annotations
 
 import logging
-import threading
 import uuid
 from pathlib import Path
 
@@ -16,14 +19,11 @@ from report.docx_gen import generate_docx
 from report.xlsx_gen import generate_xlsx
 from report.pptx_gen import generate_pptx
 from report.models import ReportRequest, ReportResponse  # noqa: F401 — used by API docs
+from utils.job_store import set_job, get_job, update_job
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/report", tags=["report"])
-
-# In-memory job store (for simplicity — in production use Redis)
-_jobs: dict[str, dict] = {}
-_lock = threading.Lock()
 
 MIME_TYPES = {
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -39,8 +39,7 @@ def _run_generation(
 ) -> None:
     """Background task to generate a report in the requested format."""
     try:
-        with _lock:
-            _jobs[job_id]["status"] = "generating"
+        update_job(job_id, {"status": "generating"})
 
         client = get_supabase_client()
 
@@ -55,28 +54,31 @@ def _run_generation(
         else:
             output_path = generate_docx(data)
 
-        with _lock:
-            _jobs[job_id]["status"] = "completed"
-            _jobs[job_id]["file_path"] = str(output_path)
-            _jobs[job_id]["file_name"] = output_path.name
-            _jobs[job_id]["format"] = fmt
+        update_job(job_id, {
+            "status": "completed",
+            "file_path": str(output_path),
+            "file_name": output_path.name,
+            "format": fmt,
+        })
 
-        # 3. Save record to reports table
-        client.table("reports").insert(
-            {
-                "analysis_id": analysis_id,
-                "scenario_id": scenario_id,
-                "name": f"Report {data.analysis.name}",
-                "format": fmt,
-                "file_url": str(output_path),
-            }
-        ).execute()
+        # 3. Save record to reports table (best-effort — schema may lack columns)
+        try:
+            client.table("reports").insert(
+                {
+                    "analysis_id": analysis_id,
+                    "scenario_id": scenario_id,
+                    "name": f"Report {data.analysis.name}",
+                    "format": fmt,
+                    "file_url": str(output_path),
+                    "status": "completed",
+                }
+            ).execute()
+        except Exception as db_err:
+            logger.warning(f"Could not save report record to DB: {db_err}")
 
     except Exception as e:
         logger.exception(f"Report generation failed for job {job_id}")
-        with _lock:
-            _jobs[job_id]["status"] = "failed"
-            _jobs[job_id]["error"] = str(e)
+        update_job(job_id, {"status": "failed", "error": str(e)})
 
 
 @router.post("/{scenario_id}")
@@ -114,13 +116,12 @@ async def generate_report(
 
     job_id = str(uuid.uuid4())
 
-    with _lock:
-        _jobs[job_id] = {
-            "status": "queued",
-            "scenario_id": scenario_id,
-            "analysis_id": analysis_id,
-            "format": format,
-        }
+    set_job(job_id, {
+        "status": "queued",
+        "scenario_id": scenario_id,
+        "analysis_id": analysis_id,
+        "format": format,
+    })
 
     background_tasks.add_task(_run_generation, job_id, analysis_id, scenario_id, format)
 
@@ -130,8 +131,7 @@ async def generate_report(
 @router.get("/{job_id}/status")
 async def report_status(job_id: str):
     """Check report generation status."""
-    with _lock:
-        job = _jobs.get(job_id)
+    job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job non trovato")
 
@@ -145,8 +145,7 @@ async def report_status(job_id: str):
 @router.get("/{job_id}/download")
 async def download_report(job_id: str):
     """Download generated report file."""
-    with _lock:
-        job = _jobs.get(job_id)
+    job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job non trovato")
     if job["status"] != "completed":

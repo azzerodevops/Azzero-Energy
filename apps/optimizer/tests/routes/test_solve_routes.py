@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from main import app
+from models.output import ValidationResult
 
 
 client = TestClient(app)
@@ -16,9 +17,11 @@ client = TestClient(app)
 class TestSolveEndpoint:
     """Tests for POST /solve/{scenario_id}."""
 
+    @patch("routes.solve.validate_analysis_data", new_callable=AsyncMock)
     @patch("routes.solve.update_scenario_status", new_callable=AsyncMock)
-    def test_solve_returns_200_queued(self, mock_update_status):
+    def test_solve_returns_200_queued(self, mock_update_status, mock_validate):
         """POST /solve/{id} returns 200 with status='queued'."""
+        mock_validate.return_value = ValidationResult(valid=True)
         mock_update_status.return_value = None
 
         response = client.post("/solve/test-scenario-123")
@@ -28,9 +31,11 @@ class TestSolveEndpoint:
         assert data["status"] == "queued"
         assert data["scenario_id"] == "test-scenario-123"
 
+    @patch("routes.solve.validate_analysis_data", new_callable=AsyncMock)
     @patch("routes.solve.update_scenario_status", new_callable=AsyncMock)
-    def test_solve_returns_message(self, mock_update_status):
+    def test_solve_returns_message(self, mock_update_status, mock_validate):
         """POST /solve/{id} response includes a message."""
+        mock_validate.return_value = ValidationResult(valid=True)
         mock_update_status.return_value = None
 
         response = client.post("/solve/test-scenario-abc")
@@ -39,9 +44,11 @@ class TestSolveEndpoint:
         assert "message" in data
         assert isinstance(data["message"], str)
 
+    @patch("routes.solve.validate_analysis_data", new_callable=AsyncMock)
     @patch("routes.solve.update_scenario_status", new_callable=AsyncMock)
-    def test_solve_calls_update_status_queued(self, mock_update_status):
+    def test_solve_calls_update_status_queued(self, mock_update_status, mock_validate):
         """POST /solve/{id} calls update_scenario_status with 'queued'."""
+        mock_validate.return_value = ValidationResult(valid=True)
         mock_update_status.return_value = None
 
         client.post("/solve/test-scenario-xyz")
@@ -52,15 +59,17 @@ class TestSolveEndpoint:
         first_call = mock_update_status.call_args_list[0]
         assert first_call == call("test-scenario-xyz", "queued")
 
+    @patch("routes.solve.validate_analysis_data", new_callable=AsyncMock)
     @patch("routes.solve.update_scenario_status", new_callable=AsyncMock)
-    def test_solve_404_when_scenario_not_found(self, mock_update_status):
+    def test_solve_404_when_scenario_not_found(self, mock_update_status, mock_validate):
         """POST /solve/{id} returns 404 when update_scenario_status raises."""
+        mock_validate.return_value = ValidationResult(valid=True)
         mock_update_status.side_effect = Exception("Scenario not found")
 
         response = client.post("/solve/nonexistent-id")
 
         assert response.status_code == 404
-        assert "Scenario not found" in response.json()["detail"]
+        assert "Scenario non trovato" in response.json()["detail"] or "Scenario not found" in response.json()["detail"]
 
 
 class TestStatusEndpoint:
@@ -143,7 +152,7 @@ class TestResultsEndpoint:
             response = client.get("/solve/nonexistent-id/results")
 
             assert response.status_code == 404
-            assert "No results found" in response.json()["detail"]
+            assert "risultato" in response.json()["detail"].lower() or "No results found" in response.json()["detail"]
 
     def test_results_from_cache(self):
         """GET /solve/{id}/results returns cached results if available."""

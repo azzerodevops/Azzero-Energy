@@ -36,10 +36,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setAuth(session?.user ?? null, session);
-      if (session?.user) {
+    // Verify the current user with the server (more secure than getSession
+    // which only reads the JWT from local storage without verification).
+    // The onAuthStateChange listener below will supply the full session.
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setAuth(user ?? null, null);
+      if (user) {
         loadOrgContext();
       }
     });

@@ -240,6 +240,14 @@ def _extract_results(
 
     total_savings = baseline_cost - (optimized_cost + total_opex)
 
+    # BUG-003 fix: distribute total_savings proportionally by production
+    total_production = sum(t.annual_production_mwh for t in tech_results)
+    if total_production > 0 and total_savings > 0:
+        for t in tech_results:
+            t.annual_savings = round(
+                total_savings * (t.annual_production_mwh / total_production), 2
+            )
+
     # Financial metrics
     payback = total_capex / total_savings if total_savings > 0 else None
 
@@ -277,7 +285,7 @@ def _extract_results(
         total_opex_annual=round(total_opex, 2),
         total_savings_annual=round(total_savings, 2),
         payback_years=round(payback, 2) if payback is not None else None,
-        irr=None,  # IRR requires iterative calculation, skip for now
+        irr=_calculate_irr(total_capex, total_savings),
         npv=round(npv, 2) if npv is not None else None,
         co2_baseline=round(baseline_co2, 4),
         co2_optimized=round(optimized_co2, 4),
@@ -327,6 +335,42 @@ def _calculate_baseline_co2(data: AnalysisData, resource_map: dict) -> float:
                 if r:
                     total += demand.annual_consumption_mwh * r.co2_factor / efficiency
     return total
+
+
+def _calculate_irr(capex: float, annual_savings: float, years: int = 20) -> float | None:
+    """Calculate IRR (Internal Rate of Return) using the bisection method.
+
+    IRR is the discount rate that makes NPV = 0.
+    Cash flows: [-capex, savings, savings, ..., savings] for `years` periods.
+    Returns the IRR as a decimal (e.g. 0.12 = 12%), or None if not computable.
+    """
+    if capex <= 0 or annual_savings <= 0:
+        return None
+
+    def npv_at_rate(rate: float) -> float:
+        return -capex + sum(annual_savings / (1 + rate) ** t for t in range(1, years + 1))
+
+    # If NPV is negative even at 0% discount, the project never pays back
+    if npv_at_rate(0.0) < 0:
+        return None
+
+    # Upper bound: 500% — if NPV is still positive, return that bound
+    high = 5.0
+    if npv_at_rate(high) > 0:
+        return round(high, 4)
+
+    # Bisection between 0% and 500%
+    low = 0.0
+    for _ in range(100):
+        mid = (low + high) / 2
+        if npv_at_rate(mid) > 0:
+            low = mid
+        else:
+            high = mid
+        if abs(high - low) < 0.0001:
+            break
+
+    return round((low + high) / 2, 4)
 
 
 def _check_demand_coverage(data: AnalysisData) -> list[str]:

@@ -374,22 +374,34 @@ async def save_results(scenario_id: str, result: "OptimizationResult") -> None:
     ).execute()
 
     # Insert the new scenario-level result
-    sr = (
-        client.table("scenario_results")
-        .insert(
-            {
-                "scenario_id": scenario_id,
-                "total_capex": result.total_capex,
-                "total_opex_annual": result.total_opex_annual,
-                "total_savings_annual": result.total_savings_annual,
-                "payback_years": result.payback_years,
-                "irr": result.irr,
-                "npv": result.npv,
-                "co2_reduction_percent": result.co2_reduction_percent,
-            }
-        )
-        .execute()
-    )
+    # Try with co2_baseline/co2_optimized first; fall back if columns don't exist yet
+    base_row = {
+        "scenario_id": scenario_id,
+        "total_capex": result.total_capex,
+        "total_opex_annual": result.total_opex_annual,
+        "total_savings_annual": result.total_savings_annual,
+        "payback_years": result.payback_years,
+        "irr": result.irr,
+        "npv": result.npv,
+        "co2_reduction_percent": result.co2_reduction_percent,
+    }
+    extended_row = {
+        **base_row,
+        "co2_baseline": result.co2_baseline,
+        "co2_optimized": result.co2_optimized,
+    }
+
+    try:
+        sr = client.table("scenario_results").insert(extended_row).execute()
+    except Exception as col_err:
+        if "co2_baseline" in str(col_err) or "co2_optimized" in str(col_err):
+            logger.warning(
+                "co2_baseline/co2_optimized columns not found — saving without them. "
+                "Apply migration 008 to enable full CO2 tracking."
+            )
+            sr = client.table("scenario_results").insert(base_row).execute()
+        else:
+            raise
 
     scenario_result_id: str = sr.data[0]["id"]
 

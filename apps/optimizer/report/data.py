@@ -79,7 +79,7 @@ def fetch_report_data(
     # 1. Fetch analysis + site ------------------------------------------------
     analysis_resp = (
         client.table("analyses")
-        .select("id, name, description, year, wacc, sites(name, address, city, province, lat, lng)")
+        .select("id, name, description, year, wacc, sites(name, address, city, province, latitude, longitude)")
         .eq("id", analysis_id)
         .single()
         .execute()
