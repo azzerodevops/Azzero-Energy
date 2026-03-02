@@ -1,0 +1,48 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+.pnp.*
+.pnpm-store/
+
+# Build
+.next/
+out/
+dist/
+build/
+.turbo/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+apps/optimizer/.venv/
+
+# Supabase
+supabase/.temp/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
+
+# Analysis files (not part of the app)
+_analisi_j4energy/
+
+# Media source files (too large for git)
+Loghi e video/*.mp4
+Loghi e video/*.wav
+
+# Skills (installed separately)
+skills/
+skills-lock.json

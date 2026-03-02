@@ -1,0 +1,26 @@
+services:
+  optimizer:
+    build:
+      context: ./apps/optimizer
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - OPTIMIZER_ALLOWED_ORIGINS=${OPTIMIZER_ALLOWED_ORIGINS:-http://localhost:3000}
+    volumes:
+      - ./apps/optimizer:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M
+    security_opt:
+      - "no-new-privileges:true"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
