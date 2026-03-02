@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthContext } from "@/lib/auth/context";
 import { redirect } from "next/navigation";
 import { AnalysisForm } from "@/components/analyses/analysis-form";
 import { ChevronRight } from "lucide-react";
@@ -9,27 +10,23 @@ export const metadata: Metadata = { title: "Nuova analisi — Creazione manuale"
 export const dynamic = "force-dynamic";
 
 export default async function ManualNewAnalysisPage() {
+  let context;
+  try {
+    context = await getAuthContext();
+  } catch {
+    redirect("/auth/login");
+  }
+
+  const orgId = context.currentOrganizationId;
+  if (!orgId) redirect("/dashboard");
+
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-
-  // Get user's organization
-  const { data: membership } = await supabase
-    .from("user_organizations")
-    .select("organization_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  if (!membership) redirect("/dashboard");
 
   // Get sites for the selector
   const { data: sites } = await supabase
     .from("sites")
     .select("id, name, city")
-    .eq("organization_id", membership.organization_id)
+    .eq("organization_id", orgId)
     .order("name");
 
   return (
@@ -50,7 +47,7 @@ export default async function ManualNewAnalysisPage() {
       </div>
 
       <AnalysisForm
-        organizationId={membership.organization_id}
+        organizationId={orgId}
         sites={sites ?? []}
       />
     </div>

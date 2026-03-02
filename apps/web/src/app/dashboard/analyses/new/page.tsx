@@ -1,31 +1,28 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthContext } from "@/lib/auth/context";
 import { redirect } from "next/navigation";
 import { WizardClient } from "./wizard-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewAnalysisPage() {
+  let context;
+  try {
+    context = await getAuthContext();
+  } catch {
+    redirect("/auth/login");
+  }
+
+  const orgId = context.currentOrganizationId;
+  if (!orgId) redirect("/dashboard");
+
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/auth/login");
-
-  // Get user's organization
-  const { data: membership } = await supabase
-    .from("user_organizations")
-    .select("organization_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  if (!membership) redirect("/dashboard");
 
   // Get sites for the site selector (step 1) + energy estimator (step 2)
   const { data: sites } = await supabase
     .from("sites")
     .select("id, name, city, nace_code, sector, area_sqm, employees, operating_hours")
-    .eq("organization_id", membership.organization_id)
+    .eq("organization_id", orgId)
     .order("name");
 
   // Get technology catalog for tech selection (step 4)
@@ -37,7 +34,7 @@ export default async function NewAnalysisPage() {
 
   return (
     <WizardClient
-      organizationId={membership.organization_id}
+      organizationId={orgId}
       sites={sites ?? []}
       technologies={technologies ?? []}
     />
