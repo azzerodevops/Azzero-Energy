@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAuthContext } from "@/lib/auth/context";
 import {
   createScenarioSchema,
   updateScenarioSchema,
@@ -17,28 +18,50 @@ function revalidateScenarioPaths(analysisId: string) {
   revalidatePath(`/dashboard/analyses/${analysisId}`);
 }
 
+/**
+ * Verifies that the given analysis belongs to the user's current org.
+ * Returns the analysis org_id if valid, or null if not.
+ */
+async function verifyAnalysisOrg(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  analysisId: string,
+  orgId: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("analyses")
+    .select("organization_id")
+    .eq("id", analysisId)
+    .single();
+  return data?.organization_id === orgId;
+}
+
 // ---------------------------------------------------------------------------
 // 1. createScenario
 // ---------------------------------------------------------------------------
 export async function createScenario(
   input: unknown,
 ): Promise<ActionResult<Record<string, unknown>>> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: "Non autenticato" };
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
 
   const parsed = createScenarioSchema.safeParse(input);
   if (!parsed.success)
     return { success: false, error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+
+  // Verify analysis belongs to org
+  if (!(await verifyAnalysisOrg(supabase, parsed.data.analysis_id, orgId))) {
+    return { success: false, error: "Analisi non trovata o accesso negato" };
+  }
 
   const { data, error } = await supabase
     .from("scenarios")
     .insert({
       ...parsed.data,
       status: "draft",
-      created_by: user.id,
+      created_by: context.user.id,
     })
     .select()
     .single();
@@ -56,15 +79,19 @@ export async function updateScenario(
   analysisId: string,
   input: unknown,
 ): Promise<ActionResult<Record<string, unknown>>> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: "Non autenticato" };
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
 
   const parsed = updateScenarioSchema.safeParse(input);
   if (!parsed.success)
     return { success: false, error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+
+  if (!(await verifyAnalysisOrg(supabase, analysisId, orgId))) {
+    return { success: false, error: "Analisi non trovata o accesso negato" };
+  }
 
   const { data, error } = await supabase
     .from("scenarios")
@@ -85,11 +112,15 @@ export async function deleteScenario(
   id: string,
   analysisId: string,
 ): Promise<ActionResult<null>> {
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
+
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: "Non autenticato" };
+
+  if (!(await verifyAnalysisOrg(supabase, analysisId, orgId))) {
+    return { success: false, error: "Analisi non trovata o accesso negato" };
+  }
 
   const { error } = await supabase.from("scenarios").delete().eq("id", id);
   if (error) return { success: false, error: error.message };
@@ -105,11 +136,15 @@ export async function duplicateScenario(
   id: string,
   analysisId: string,
 ): Promise<ActionResult<Record<string, unknown>>> {
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
+
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: "Non autenticato" };
+
+  if (!(await verifyAnalysisOrg(supabase, analysisId, orgId))) {
+    return { success: false, error: "Analisi non trovata o accesso negato" };
+  }
 
   // Fetch original scenario
   const { data: original, error: fetchError } = await supabase
@@ -131,7 +166,7 @@ export async function duplicateScenario(
       co2_target: original.co2_target,
       budget_limit: original.budget_limit,
       status: "draft",
-      created_by: user.id,
+      created_by: context.user.id,
     })
     .select()
     .single();
@@ -167,7 +202,15 @@ export async function duplicateScenario(
 // 5. getScenarios
 // ---------------------------------------------------------------------------
 export async function getScenarios(analysisId: string) {
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false as const, error: "Nessuna organizzazione selezionata" };
+
   const supabase = await createClient();
+
+  if (!(await verifyAnalysisOrg(supabase, analysisId, orgId))) {
+    return { success: false as const, error: "Analisi non trovata o accesso negato" };
+  }
 
   const { data, error } = await supabase
     .from("scenarios")
@@ -183,7 +226,22 @@ export async function getScenarios(analysisId: string) {
 // 6. getScenarioResults
 // ---------------------------------------------------------------------------
 export async function getScenarioResults(scenarioId: string) {
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false as const, error: "Nessuna organizzazione selezionata" };
+
   const supabase = await createClient();
+
+  // Verify scenario belongs to org through analysis
+  const { data: scenario } = await supabase
+    .from("scenarios")
+    .select("analysis_id")
+    .eq("id", scenarioId)
+    .single();
+  if (!scenario) return { success: false as const, error: "Scenario non trovato" };
+  if (!(await verifyAnalysisOrg(supabase, scenario.analysis_id, orgId))) {
+    return { success: false as const, error: "Accesso negato" };
+  }
 
   const { data, error } = await supabase
     .from("scenario_results")
@@ -202,11 +260,15 @@ export async function launchOptimization(
   scenarioId: string,
   analysisId: string,
 ): Promise<ActionResult<{ message: string }>> {
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
+
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: "Non autenticato" };
+
+  if (!(await verifyAnalysisOrg(supabase, analysisId, orgId))) {
+    return { success: false, error: "Analisi non trovata o accesso negato" };
+  }
 
   // Set status to queued
   const { error: updateError } = await supabase
@@ -252,6 +314,8 @@ export async function launchOptimization(
 // 8. getScenarioStatus
 // ---------------------------------------------------------------------------
 export async function getScenarioStatus(scenarioId: string) {
+  await getAuthContext(); // ensures authenticated
+
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -277,6 +341,8 @@ export interface ValidationResult {
 export async function validateScenario(
   scenarioId: string,
 ): Promise<ActionResult<ValidationResult>> {
+  await getAuthContext(); // ensures authenticated
+
   try {
     const response = await fetch(
       `http://localhost:8000/solve/${scenarioId}/validate`,
@@ -303,6 +369,8 @@ export async function validateScenario(
 export async function getScenarioErrorMessage(
   scenarioId: string,
 ): Promise<ActionResult<{ error_message: string | null }>> {
+  await getAuthContext(); // ensures authenticated
+
   const supabase = await createClient();
 
   const { data, error } = await supabase
@@ -321,15 +389,26 @@ export async function getScenarioErrorMessage(
 export async function upsertTechConfig(
   input: unknown,
 ): Promise<ActionResult<Record<string, unknown>>> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: "Non autenticato" };
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
 
   const parsed = createScenarioTechConfigSchema.safeParse(input);
   if (!parsed.success)
     return { success: false, error: parsed.error.issues[0].message };
+
+  const supabase = await createClient();
+
+  // Verify scenario's analysis belongs to org
+  const { data: scenario } = await supabase
+    .from("scenarios")
+    .select("analysis_id")
+    .eq("id", parsed.data.scenario_id)
+    .single();
+  if (!scenario) return { success: false, error: "Scenario non trovato" };
+  if (!(await verifyAnalysisOrg(supabase, scenario.analysis_id, orgId))) {
+    return { success: false, error: "Accesso negato" };
+  }
 
   const { data, error } = await supabase
     .from("scenario_tech_configs")
@@ -340,13 +419,7 @@ export async function upsertTechConfig(
     .single();
   if (error) return { success: false, error: error.message };
 
-  // Resolve analysisId for revalidation
-  const { data: scenario } = await supabase
-    .from("scenarios")
-    .select("analysis_id")
-    .eq("id", parsed.data.scenario_id)
-    .single();
-  if (scenario) revalidateScenarioPaths(scenario.analysis_id);
+  revalidateScenarioPaths(scenario.analysis_id);
 
   return { success: true, data };
 }
@@ -359,11 +432,15 @@ export async function deleteTechConfig(
   scenarioId: string,
   analysisId: string,
 ): Promise<ActionResult<null>> {
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
+
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: "Non autenticato" };
+
+  if (!(await verifyAnalysisOrg(supabase, analysisId, orgId))) {
+    return { success: false, error: "Accesso negato" };
+  }
 
   const { error } = await supabase
     .from("scenario_tech_configs")
@@ -380,6 +457,8 @@ export async function deleteTechConfig(
 // 11. getTechConfigs
 // ---------------------------------------------------------------------------
 export async function getTechConfigs(scenarioId: string) {
+  await getAuthContext(); // ensures authenticated
+
   const supabase = await createClient();
 
   const { data, error } = await supabase

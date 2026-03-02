@@ -123,13 +123,8 @@ export function LoginForm({ urlError }: LoginFormProps) {
             {isLoading ? "Accesso in corso..." : "Accedi"}
           </Button>
           <p className="text-center text-sm text-muted-foreground">
-            Non hai un account?{" "}
-            <Link
-              href="/auth/register"
-              className="text-primary hover:underline font-medium"
-            >
-              Registrati
-            </Link>
+            L&apos;accesso è riservato. Contatta l&apos;amministratore per
+            ottenere le credenziali.
           </p>
         </CardFooter>
       </form>

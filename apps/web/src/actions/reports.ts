@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAuthContext } from "@/lib/auth/context";
 import { revalidatePath } from "next/cache";
 
 type ActionResult<T> =
@@ -10,7 +11,22 @@ type ActionResult<T> =
 export async function getReports(
   analysisId: string,
 ): Promise<ActionResult<Record<string, unknown>[]>> {
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
+
   const supabase = await createClient();
+
+  // Verify analysis belongs to org
+  const { data: analysis } = await supabase
+    .from("analyses")
+    .select("organization_id")
+    .eq("id", analysisId)
+    .single();
+  if (!analysis || analysis.organization_id !== orgId) {
+    return { success: false, error: "Analisi non trovata o accesso negato" };
+  }
+
   const { data, error } = await supabase
     .from("reports")
     .select("*")
@@ -24,7 +40,22 @@ export async function deleteReport(
   id: string,
   analysisId: string,
 ): Promise<ActionResult<null>> {
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
+
   const supabase = await createClient();
+
+  // Verify analysis belongs to org
+  const { data: analysis } = await supabase
+    .from("analyses")
+    .select("organization_id")
+    .eq("id", analysisId)
+    .single();
+  if (!analysis || analysis.organization_id !== orgId) {
+    return { success: false, error: "Analisi non trovata o accesso negato" };
+  }
+
   const { error } = await supabase.from("reports").delete().eq("id", id);
   if (error) return { success: false, error: error.message };
   revalidatePath(`/dashboard/analyses/${analysisId}/report`);

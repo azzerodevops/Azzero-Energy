@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAuthContext } from "@/lib/auth/context";
 import { revalidatePath } from "next/cache";
 import type {
   WizardStep1Input,
@@ -26,11 +27,16 @@ interface WizardInput {
 export async function completeWizard(
   input: WizardInput,
 ): Promise<ActionResult<{ analysisId: string; scenarioId: string }>> {
+  const context = await getAuthContext();
+  const orgId = context.currentOrganizationId;
+  if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
+
+  // Verify the input org matches the user's current org
+  if (input.organization_id !== orgId) {
+    return { success: false, error: "Non hai accesso a questa organizzazione" };
+  }
+
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { success: false, error: "Non autenticato" };
 
   // ---- Validate required fields ----
   if (!input.step1.name || !input.step1.site_id) {
@@ -43,19 +49,29 @@ export async function completeWizard(
     return { success: false, error: "Seleziona almeno una tecnologia" };
   }
 
+  // Verify the site belongs to this org
+  const { data: site } = await supabase
+    .from("sites")
+    .select("organization_id")
+    .eq("id", input.step1.site_id)
+    .single();
+  if (!site || site.organization_id !== orgId) {
+    return { success: false, error: "Sito non trovato o accesso negato" };
+  }
+
   // ---- 1. Create analysis ----
   const { data: analysis, error: analysisError } = await supabase
     .from("analyses")
     .insert({
       site_id: input.step1.site_id,
-      organization_id: input.organization_id,
+      organization_id: orgId,
       name: input.step1.name,
       description: input.step1.description ?? null,
       year: input.step1.year ?? new Date().getFullYear(),
       wacc: input.step1.wacc ?? null,
       status: "draft",
       wizard_completed: true,
-      created_by: user.id,
+      created_by: context.user.id,
     })
     .select("id")
     .single();
@@ -108,40 +124,38 @@ export async function completeWizard(
   }
 
   // ---- 4b. Create default energy resources (grid electricity + natural gas) ----
-  // The solver needs at least grid electricity to balance demand
-  // Prices in EUR/MWh, CO2 in tCO2/MWh (as per DB schema)
   const defaultResources = [
     {
       analysis_id: analysisId,
       resource_type: "electricity",
-      buying_price: 250,      // €/MWh - prezzo medio Italia (~0.25 €/kWh)
-      selling_price: 50,      // €/MWh - prezzo vendita eccedenze
-      co2_factor: 0.256,      // tCO2/MWh - fattore emissione mix elettrico italiano
-      max_availability: null,  // illimitata dalla rete
+      buying_price: 250,
+      selling_price: 50,
+      co2_factor: 0.256,
+      max_availability: null,
     },
     {
       analysis_id: analysisId,
       resource_type: "natural_gas",
-      buying_price: 90,       // €/MWh - prezzo medio gas Italia (~0.09 €/kWh)
+      buying_price: 90,
       selling_price: 0,
-      co2_factor: 0.202,      // tCO2/MWh - fattore emissione gas naturale
+      co2_factor: 0.202,
       max_availability: null,
     },
     {
       analysis_id: analysisId,
       resource_type: "solar",
-      buying_price: 0,        // risorsa gratuita (irraggiamento)
+      buying_price: 0,
       selling_price: 0,
-      co2_factor: 0,          // zero emissioni
-      max_availability: null,  // limitata dal capacity_factor della tecnologia
+      co2_factor: 0,
+      max_availability: null,
     },
     {
       analysis_id: analysisId,
       resource_type: "wind",
-      buying_price: 0,        // risorsa gratuita (vento)
+      buying_price: 0,
       selling_price: 0,
-      co2_factor: 0,          // zero emissioni
-      max_availability: null,  // limitata dal capacity_factor della tecnologia
+      co2_factor: 0,
+      max_availability: null,
     },
   ];
 
@@ -150,7 +164,6 @@ export async function completeWizard(
     .insert(defaultResources);
   if (resourcesError) {
     console.error("Warning: failed to create default resources:", resourcesError.message);
-    // Non-fatal: continue even if resources fail (user can add them manually)
   }
 
   // ---- 5. Create first scenario ----
@@ -163,17 +176,20 @@ export async function completeWizard(
       co2_target: input.step5.co2_target ?? null,
       budget_limit: input.step5.budget_limit ?? null,
       status: "draft",
-      created_by: user.id,
+      created_by: context.user.id,
     })
     .select("id")
     .single();
   if (scenarioError) return { success: false, error: scenarioError.message };
 
   // ---- 6. Update analysis status to "ready" ----
-  await supabase
+  const { error: statusError } = await supabase
     .from("analyses")
     .update({ status: "ready" })
     .eq("id", analysisId);
+  if (statusError) {
+    console.error("Warning: failed to update analysis status:", statusError.message);
+  }
 
   revalidatePath("/dashboard/analyses");
   revalidatePath(`/dashboard/analyses/${analysisId}`);

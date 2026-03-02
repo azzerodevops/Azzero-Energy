@@ -9,8 +9,11 @@ import {
   Presentation,
   Download,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { deleteReport } from "@/actions/reports";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -51,10 +54,29 @@ export function ReportClient({
   scenarios,
   reports,
 }: ReportClientProps) {
+  const router = useRouter();
   const [selectedScenario, setSelectedScenario] = useState<string>("");
   const [format, setFormat] = useState<string>("docx");
   const [generating, setGenerating] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function handleDelete(reportId: string) {
+    setDeletingId(reportId);
+    try {
+      const result = await deleteReport(reportId, analysisId);
+      if (result.success) {
+        toast.success("Report eliminato");
+        router.refresh();
+      } else {
+        toast.error(result.error);
+      }
+    } catch {
+      toast.error("Errore durante l'eliminazione");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const formatIcon = {
     docx: FileText,
@@ -254,6 +276,18 @@ export function ReportClient({
                       {report.format.toUpperCase()}
                     </Badge>
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDelete(report.id)}
+                    disabled={deletingId === report.id}
+                  >
+                    {deletingId === report.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    )}
+                  </Button>
                 </div>
               ))}
             </div>

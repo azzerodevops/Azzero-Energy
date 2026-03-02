@@ -53,7 +53,7 @@ export function MapClient({ sites }: MapClientProps) {
         <Card className="overflow-hidden">
           <CardContent className="p-0">
             <SiteMap
-              sites={sites}
+              sites={filteredSites}
               onSiteClick={handleSiteClick}
               className="h-[600px]"
             />

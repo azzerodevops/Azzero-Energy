@@ -331,13 +331,21 @@ async def update_scenario_status(
     client = get_supabase_client()
 
     update_data: dict[str, str | None] = {"status": status}
-    if status == "failed":
-        update_data["error_message"] = error_message or "Errore sconosciuto durante l'ottimizzazione."
-    else:
-        # Clear any previous error when re-running or completing
-        update_data["error_message"] = None
 
-    client.table("scenarios").update(update_data).eq("id", scenario_id).execute()
+    # Try to include error_message if the column exists
+    try:
+        if status == "failed":
+            update_data["error_message"] = error_message or "Errore sconosciuto durante l'ottimizzazione."
+        else:
+            update_data["error_message"] = None
+        client.table("scenarios").update(update_data).eq("id", scenario_id).execute()
+    except Exception as e:
+        if "error_message" in str(e):
+            # Column doesn't exist yet — update without it
+            logger.warning("error_message column not found, updating status only")
+            client.table("scenarios").update({"status": status}).eq("id", scenario_id).execute()
+        else:
+            raise
 
 
 async def save_results(scenario_id: str, result: "OptimizationResult") -> None:

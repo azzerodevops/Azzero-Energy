@@ -337,8 +337,8 @@ export function SolveButton({
               <ul className="list-disc pl-5 space-y-1">
                 <li>Verifica che i consumi energetici siano configurati correttamente</li>
                 <li>Controlla che le tecnologie abbiano dati di conversione (input/output)</li>
-                <li>Prova a rilassare i vincoli di budget o capacita</li>
-                <li>Aggiungi piu tecnologie per dare piu flessibilita al solver</li>
+                <li>Prova a rilassare i vincoli di budget o capacità</li>
+                <li>Aggiungi più tecnologie per dare più flessibilità al solver</li>
               </ul>
             </div>
           </div>

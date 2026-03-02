@@ -117,6 +117,9 @@ export const OBJECTIVE_COLORS = {
 // --- Phase 8.1: Demand Profile Types ---
 
 export const PROFILE_TYPE_LABELS = {
+  nace_default: "Default NACE",
+  custom: "Personalizzato",
+  upload: "Caricato",
   office: "Ufficio",
   industrial_1shift: "Industriale 1 turno",
   industrial_2shift: "Industriale 2 turni",

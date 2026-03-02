@@ -99,6 +99,10 @@ def _add_balance_for_end_use(
     ]
 
     # ---- 4. Hourly balance constraint ----
+    # Include baseline thermal supply (thermal_buy) as fallback – analogous
+    # to the grid buy variable in the electricity balance.
+    has_baseline = eu_key in v.thermal_buy
+
     for h in range(HOURS):
         # Production terms
         production_terms: list[pulp.LpVariable] = []
@@ -121,6 +125,10 @@ def _add_balance_for_end_use(
         lhs = pulp.lpSum(production_terms) \
             + pulp.lpSum(storage_discharge_terms) \
             - pulp.lpSum(storage_charge_terms)
+
+        # Baseline fallback: conventional equipment (gas boiler / chiller)
+        if has_baseline:
+            lhs += v.thermal_buy[eu_key][h]
 
         prob += (
             lhs == hourly_demand_kwh[h],

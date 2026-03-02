@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { getAuthContext } from "@/lib/auth/context";
 
 // NACE sector benchmark data (average consumption MWh/employee/year)
 // These are approximate Italian sector averages
@@ -47,7 +48,21 @@ export async function getBenchmarkData(
   analysisId: string
 ): Promise<{ success: true; data: BenchmarkData } | { success: false; error: string }> {
   try {
+    const context = await getAuthContext();
+    const orgId = context.currentOrganizationId;
+    if (!orgId) return { success: false, error: "Nessuna organizzazione selezionata" };
+
     const supabase = await createClient();
+
+    // Verify analysis belongs to org
+    const { data: analysisCheck } = await supabase
+      .from("analyses")
+      .select("organization_id")
+      .eq("id", analysisId)
+      .single();
+    if (!analysisCheck || analysisCheck.organization_id !== orgId) {
+      return { success: false, error: "Analisi non trovata o accesso negato" };
+    }
 
     // Fetch analysis with site info and demands
     const { data: analysis, error: analysisError } = await supabase

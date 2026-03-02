@@ -106,7 +106,7 @@ export function MarketPrices() {
                 <Tooltip
                   contentStyle={tooltipStyle}
                   formatter={(value: number | undefined) => [
-                    `€ ${value}/MWh`,
+                    `€ ${value ?? 0}/MWh`,
                     "Prezzo",
                   ]}
                 />
@@ -165,7 +165,7 @@ export function MarketPrices() {
                 <Tooltip
                   contentStyle={tooltipStyle}
                   formatter={(value: number | undefined) => [
-                    `€ ${value}/MWh`,
+                    `€ ${value ?? 0}/MWh`,
                     "Prezzo",
                   ]}
                 />

@@ -147,31 +147,29 @@ export function SiteForm({ organizationId, initialData }: SiteFormProps) {
             <FormField control={form.control} name="nace_code" render={({ field }) => (
               <FormItem className="sm:col-span-2">
                 <FormLabel>Codice NACE</FormLabel>
-                <FormControl>
-                  <NaceSelector
-                    value={field.value ?? ""}
-                    onSelect={(code, sectorLabel) => {
-                      field.onChange(code);
-                      // Auto-fill the sector field based on NACE section
-                      form.setValue("sector", sectorLabel, { shouldValidate: true });
-                      // Auto-fill operating hours and working days from energy profile
-                      const profile = getNaceProfile(code);
-                      if (profile) {
-                        // Only auto-fill if the fields are currently empty or this is the first auto-fill
-                        const currentHours = form.getValues("operating_hours");
-                        const currentDays = form.getValues("working_days");
-                        if (!currentHours || !naceAutoFilled) {
-                          form.setValue("operating_hours", profile.typical_operating_hours, { shouldValidate: true });
-                        }
-                        if ((!currentDays || currentDays.length === 0) || !naceAutoFilled) {
-                          form.setValue("working_days", profile.typical_working_days, { shouldValidate: true });
-                        }
-                        setNaceAutoFilled(true);
-                        toast.info(`Dati operativi precompilati per settore "${profile.sector}"`);
+                <NaceSelector
+                  value={field.value ?? ""}
+                  onSelect={(code, sectorLabel) => {
+                    field.onChange(code);
+                    // Auto-fill the sector field based on NACE section
+                    form.setValue("sector", sectorLabel, { shouldValidate: true });
+                    // Auto-fill operating hours and working days from energy profile
+                    const profile = getNaceProfile(code);
+                    if (profile) {
+                      // Only auto-fill if the fields are currently empty or this is the first auto-fill
+                      const currentHours = form.getValues("operating_hours");
+                      const currentDays = form.getValues("working_days");
+                      if (!currentHours || !naceAutoFilled) {
+                        form.setValue("operating_hours", profile.typical_operating_hours, { shouldValidate: true });
                       }
-                    }}
-                  />
-                </FormControl>
+                      if ((!currentDays || currentDays.length === 0) || !naceAutoFilled) {
+                        form.setValue("working_days", profile.typical_working_days, { shouldValidate: true });
+                      }
+                      setNaceAutoFilled(true);
+                      toast.info(`Dati operativi precompilati per settore "${profile.sector}"`);
+                    }
+                  }}
+                />
                 <FormDescription>
                   Seleziona il codice NACE per compilare automaticamente settore e dati operativi
                 </FormDescription>

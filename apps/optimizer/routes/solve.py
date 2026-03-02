@@ -158,13 +158,23 @@ async def status(scenario_id: str):
     client = get_supabase_client()
 
     try:
-        resp = (
-            client.table("scenarios")
-            .select("status, error_message")
-            .eq("id", scenario_id)
-            .single()
-            .execute()
-        )
+        try:
+            resp = (
+                client.table("scenarios")
+                .select("status, error_message")
+                .eq("id", scenario_id)
+                .single()
+                .execute()
+            )
+        except Exception:
+            # Fallback if error_message column doesn't exist
+            resp = (
+                client.table("scenarios")
+                .select("status")
+                .eq("id", scenario_id)
+                .single()
+                .execute()
+            )
         return StatusResponse(
             scenario_id=scenario_id,
             status=resp.data["status"],

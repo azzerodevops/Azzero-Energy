@@ -40,9 +40,9 @@ export function VideoHero() {
           piattaforma intelligente
         </p>
         <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-          <Link href="/auth/register">
+          <Link href="/auth/login">
             <Button size="lg" className="min-w-[160px] text-base">
-              Inizia ora
+              Accedi
             </Button>
           </Link>
           <a href="#features">

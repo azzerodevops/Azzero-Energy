@@ -4,8 +4,8 @@ import pulp
 from config import settings
 from models.input import AnalysisData, ScenarioConfig
 from models.output import OptimizationResult, TechResult, StorageResult
-from models.enums import Objective, EndUse
-from solver.variables import create_all_variables, OptVars, HOURS
+from models.enums import Objective, EndUse, ResourceType
+from solver.variables import create_all_variables, OptVars, HOURS, BASELINE_EFFICIENCY, BASELINE_RESOURCE
 from solver.electricity import add_electricity_balance
 from solver.thermal import add_thermal_balance
 from solver.storage import add_storage_constraints
@@ -39,16 +39,6 @@ def run_optimization(data: AnalysisData, config: ScenarioConfig) -> Optimization
             ),
         )
 
-    if not data.technologies:
-        return OptimizationResult(
-            scenario_id=config.scenario_id,
-            status="failed",
-            error_message=(
-                "Nessuna tecnologia trovata per questa analisi. "
-                "Aggiungi almeno una tecnologia nella sezione 'Tecnologie'."
-            ),
-        )
-
     if not data.resources:
         return OptimizationResult(
             scenario_id=config.scenario_id,
@@ -59,18 +49,16 @@ def run_optimization(data: AnalysisData, config: ScenarioConfig) -> Optimization
             ),
         )
 
-    # Check that at least one technology has conversion data
-    techs_with_io = [t for t in data.technologies if t.inputs and t.outputs]
-    if not techs_with_io:
-        return OptimizationResult(
-            scenario_id=config.scenario_id,
-            status="failed",
-            error_message=(
-                "Nessuna delle tecnologie selezionate ha dati di conversione (input/output). "
-                "L'ottimizzazione non può procedere senza parametri di conversione. "
-                "Contatta l'amministratore per configurare il catalogo tecnologie."
-            ),
+    if not data.technologies:
+        logger.info(
+            "No technologies provided — optimization will use baseline supply only "
+            "(grid electricity + conventional thermal equipment)."
         )
+
+    # Pre-optimization coverage analysis
+    warnings = _check_demand_coverage(data)
+    if warnings:
+        logger.info(f"Pre-optimization warnings: {warnings}")
 
     # 1. Create problem
     sense = pulp.LpMinimize
@@ -113,15 +101,19 @@ def run_optimization(data: AnalysisData, config: ScenarioConfig) -> Optimization
     logger.info(f"Solver status: {solver_status}")
 
     if prob.status != pulp.constants.LpStatusOptimal:
-        # Translate solver status to actionable Italian error messages
+        # Build context-aware Italian error messages
+        infeasible_details = ""
+        if warnings:
+            infeasible_details = "\n\nDettagli:\n" + "\n".join(f"- {w}" for w in warnings)
+
         status_messages: dict[str, str] = {
             "Infeasible": (
-                "Il problema è infeasible: non esiste una soluzione che soddisfi tutti i vincoli. "
-                "Possibili cause:\n"
-                "- Vincolo di budget troppo restrittivo\n"
-                "- Capacità minima delle tecnologie superiore alla domanda\n"
-                "- Dati di conversione tecnologica mancanti o errati\n"
-                "Prova a rilassare i vincoli o aggiungere più tecnologie."
+                "Il problema è infeasible: non esiste una soluzione che soddisfi tutti i vincoli."
+                + infeasible_details
+                + "\n\nSuggerimenti:\n"
+                "- Se hai impostato un budget, prova ad aumentarlo o rimuoverlo\n"
+                "- Se hai forzato una tecnologia, verifica che sia compatibile con il budget\n"
+                "- Per scenari di decarbonizzazione, verifica che l'obiettivo CO₂ sia raggiungibile"
             ),
             "Unbounded": (
                 "Il problema è illimitato (unbounded). Questo indica un errore "
@@ -226,6 +218,26 @@ def _extract_results(
             total_sold_kwh = sum(pulp.value(var) or 0.0 for var in sell_vars)
             optimized_cost -= total_sold_kwh * r.selling_price / 1000
 
+    # Baseline thermal supply cost and CO2
+    for eu_str, buy_vars in v.thermal_buy.items():
+        eu = EndUse(eu_str)
+        efficiency = BASELINE_EFFICIENCY.get(eu, 0.9)
+        res_type = BASELINE_RESOURCE.get(eu)
+        if res_type is None:
+            continue
+        r = resource_map.get(res_type.value)
+        if r is None:
+            continue
+        total_thbuy_kwh = sum(pulp.value(var) or 0.0 for var in buy_vars)
+        optimized_cost += total_thbuy_kwh * r.buying_price / efficiency / 1000
+        optimized_co2 += total_thbuy_kwh * r.co2_factor / efficiency / 1000
+        if total_thbuy_kwh > 0:
+            logger.info(
+                f"Baseline thermal supply for {eu_str}: "
+                f"{total_thbuy_kwh / 1000:.1f} MWh "
+                f"(cost: {total_thbuy_kwh * r.buying_price / efficiency / 1000:.0f} EUR)"
+            )
+
     total_savings = baseline_cost - (optimized_cost + total_opex)
 
     # Financial metrics
@@ -276,22 +288,26 @@ def _extract_results(
 
 
 def _calculate_baseline_cost(data: AnalysisData, resource_map: dict) -> float:
-    """Calculate the baseline annual energy cost (no optimization, buy everything from grid)."""
+    """Calculate the baseline annual energy cost (no optimization).
+
+    For electricity: buy from grid.
+    For thermal: buy fuel and convert via conventional equipment (gas boiler / chiller)
+    accounting for conversion efficiency.
+    """
     total = 0.0
     for demand in data.demands:
-        # For electricity, use electricity price
         if demand.end_use == EndUse.ELECTRICITY:
             r = resource_map.get("electricity")
             if r:
-                total += demand.annual_consumption_mwh * r.buying_price  # EUR (MWh * EUR/MWh)
-        elif demand.end_use in (EndUse.HEAT_HIGH_T, EndUse.HEAT_MED_T, EndUse.HEAT_LOW_T):
-            r = resource_map.get("natural_gas")
-            if r:
                 total += demand.annual_consumption_mwh * r.buying_price
-        elif demand.end_use == EndUse.COLD:
-            r = resource_map.get("electricity")
-            if r:
-                total += demand.annual_consumption_mwh * r.buying_price
+        else:
+            # Thermal: use baseline resource + efficiency
+            efficiency = BASELINE_EFFICIENCY.get(demand.end_use, 0.9)
+            res_type = BASELINE_RESOURCE.get(demand.end_use)
+            if res_type:
+                r = resource_map.get(res_type.value)
+                if r:
+                    total += demand.annual_consumption_mwh * r.buying_price / efficiency
     return total
 
 
@@ -302,13 +318,52 @@ def _calculate_baseline_co2(data: AnalysisData, resource_map: dict) -> float:
         if demand.end_use == EndUse.ELECTRICITY:
             r = resource_map.get("electricity")
             if r:
-                total += demand.annual_consumption_mwh * r.co2_factor  # tCO2
-        elif demand.end_use in (EndUse.HEAT_HIGH_T, EndUse.HEAT_MED_T, EndUse.HEAT_LOW_T):
-            r = resource_map.get("natural_gas")
-            if r:
                 total += demand.annual_consumption_mwh * r.co2_factor
-        elif demand.end_use == EndUse.COLD:
-            r = resource_map.get("electricity")
-            if r:
-                total += demand.annual_consumption_mwh * r.co2_factor
+        else:
+            efficiency = BASELINE_EFFICIENCY.get(demand.end_use, 0.9)
+            res_type = BASELINE_RESOURCE.get(demand.end_use)
+            if res_type:
+                r = resource_map.get(res_type.value)
+                if r:
+                    total += demand.annual_consumption_mwh * r.co2_factor / efficiency
     return total
+
+
+def _check_demand_coverage(data: AnalysisData) -> list[str]:
+    """Check which demand vectors have dedicated technology coverage.
+
+    Returns a list of warning strings for demands that rely entirely on
+    baseline supply (no technology produces that end-use).
+    """
+    warnings: list[str] = []
+
+    _EU_LABELS = {
+        EndUse.ELECTRICITY: "Elettricità",
+        EndUse.HEAT_HIGH_T: "Calore alta temperatura",
+        EndUse.HEAT_MED_T: "Calore media temperatura",
+        EndUse.HEAT_LOW_T: "Calore bassa temperatura",
+        EndUse.COLD: "Raffrescamento",
+    }
+
+    for demand in data.demands:
+        if demand.annual_consumption_mwh <= 0:
+            continue
+        eu = demand.end_use
+
+        # Check if any technology produces this end-use
+        has_producer = any(
+            any(out.end_use == eu for out in tech.outputs)
+            for tech in data.technologies
+        )
+
+        if not has_producer:
+            label = _EU_LABELS.get(eu, eu.value)
+            if eu == EndUse.ELECTRICITY:
+                # Electricity is always covered by the grid
+                continue
+            warnings.append(
+                f"{label} ({demand.annual_consumption_mwh:.0f} MWh/anno): "
+                f"nessuna tecnologia selezionata produce questo vettore energetico. "
+                f"Sarà coperto dal sistema convenzionale (baseline)."
+            )
+    return warnings

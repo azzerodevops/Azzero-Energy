@@ -93,7 +93,7 @@ export function ScenarioDetailClient({ scenario, analysisId, technologies, techC
             <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
             <div className="space-y-1">
               <p className="text-sm font-medium text-destructive">
-                L&apos;ultima ottimizzazione e fallita
+                L&apos;ultima ottimizzazione è fallita
               </p>
               <p className="text-sm text-destructive/80 whitespace-pre-wrap">
                 {scenario.error_message}

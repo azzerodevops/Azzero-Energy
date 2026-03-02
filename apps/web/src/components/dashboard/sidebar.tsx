@@ -7,6 +7,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/stores/sidebar-store";
 import { navItems } from "./nav-items";
+import { OrganizationSelector } from "./organization-selector";
 import {
   Tooltip,
   TooltipContent,
@@ -41,6 +42,11 @@ export function Sidebar() {
               priority
             />
           )}
+        </div>
+
+        {/* Organization selector (admin only) */}
+        <div className="px-2 py-2">
+          <OrganizationSelector isCollapsed={isCollapsed} />
         </div>
 
         {/* Navigation */}

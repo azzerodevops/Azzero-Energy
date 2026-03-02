@@ -15,7 +15,7 @@ from report.data import fetch_report_data
 from report.docx_gen import generate_docx
 from report.xlsx_gen import generate_xlsx
 from report.pptx_gen import generate_pptx
-from report.models import ReportRequest, ReportResponse
+from report.models import ReportRequest, ReportResponse  # noqa: F401 — used by API docs
 
 logger = logging.getLogger(__name__)
 

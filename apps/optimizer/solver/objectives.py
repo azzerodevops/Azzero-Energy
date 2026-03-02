@@ -1,8 +1,8 @@
 from __future__ import annotations
 import pulp
 from models.input import AnalysisData, ScenarioConfig
-from models.enums import Objective, ResourceType
-from solver.variables import OptVars, HOURS
+from models.enums import EndUse, Objective, ResourceType
+from solver.variables import OptVars, HOURS, BASELINE_EFFICIENCY, BASELINE_RESOURCE
 
 
 def crf(wacc: float, lifetime: int) -> float:
@@ -72,6 +72,9 @@ def set_cost_objective(
             annuity = crf(data.wacc, 15)  # assume 15 year lifetime for storage
             terms.append(storage.capex_per_kwh * storage.capacity_kwh * annuity)
 
+    # Baseline thermal supply costs (gas boiler / electric chiller)
+    terms.extend(_thermal_buy_cost_terms(v, data, resource_map))
+
     prob += pulp.lpSum(terms), "total_annual_cost"
 
 
@@ -97,6 +100,9 @@ def set_co2_objective(
         if r and r.co2_factor > 0:
             co2_terms.append(pulp.lpSum(buy_vars) * r.co2_factor / 1000)
 
+    # Baseline thermal supply CO2 emissions
+    co2_terms.extend(_thermal_buy_co2_terms(v, data, resource_map))
+
     prob += pulp.lpSum(co2_terms), "total_co2_emissions"
 
     # Optional budget constraint
@@ -121,4 +127,63 @@ def set_co2_objective(
             if r and r.selling_price > 0:
                 cost_terms.append(-pulp.lpSum(sell_vars) * r.selling_price / 1000)
 
+        # Include thermal baseline costs in budget constraint
+        cost_terms.extend(_thermal_buy_cost_terms(v, data, resource_map))
+
         prob += (pulp.lpSum(cost_terms) <= budget_limit, "budget_constraint")
+
+
+# ---------------------------------------------------------------------------
+# Helpers for baseline thermal supply cost / CO2
+# ---------------------------------------------------------------------------
+
+
+def _thermal_buy_cost_terms(
+    v: OptVars,
+    data: AnalysisData,
+    resource_map: dict,
+) -> list:
+    """Return PuLP cost terms for all thermal_buy variables.
+
+    Cost of thermal_buy[eu][h] = buying_price_of_resource / efficiency / 1000
+    (buying_price is EUR/MWh, thermal_buy is kWh → divide by 1000).
+    """
+    terms = []
+    for eu_str, buy_vars in v.thermal_buy.items():
+        eu = EndUse(eu_str)
+        efficiency = BASELINE_EFFICIENCY.get(eu, 0.9)
+        resource_type = BASELINE_RESOURCE.get(eu)
+        if resource_type is None:
+            continue
+        r = resource_map.get(resource_type.value)
+        if r is None:
+            continue
+        # price per kWh of *thermal* energy delivered
+        price_per_kwh = r.buying_price / efficiency / 1000  # EUR/kWh_thermal
+        terms.append(pulp.lpSum(buy_vars) * price_per_kwh)
+    return terms
+
+
+def _thermal_buy_co2_terms(
+    v: OptVars,
+    data: AnalysisData,
+    resource_map: dict,
+) -> list:
+    """Return PuLP CO2 terms for all thermal_buy variables.
+
+    CO2 of thermal_buy[eu][h] = co2_factor_of_resource / efficiency / 1000
+    (co2_factor is tCO2/MWh, thermal_buy is kWh → divide by 1000).
+    """
+    terms = []
+    for eu_str, buy_vars in v.thermal_buy.items():
+        eu = EndUse(eu_str)
+        efficiency = BASELINE_EFFICIENCY.get(eu, 0.9)
+        resource_type = BASELINE_RESOURCE.get(eu)
+        if resource_type is None:
+            continue
+        r = resource_map.get(resource_type.value)
+        if r is None or r.co2_factor <= 0:
+            continue
+        co2_per_kwh = r.co2_factor / efficiency / 1000  # tCO2/kWh_thermal
+        terms.append(pulp.lpSum(buy_vars) * co2_per_kwh)
+    return terms

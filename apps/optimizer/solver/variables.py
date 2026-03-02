@@ -5,6 +5,28 @@ from models.enums import EndUse, ResourceType
 
 HOURS = 8760
 
+# ---------------------------------------------------------------------------
+# Baseline thermal supply parameters
+# ---------------------------------------------------------------------------
+# Efficiency of conventional equipment used to satisfy thermal demand when
+# no optimized technology is selected.  For HEAT_* this is a gas boiler
+# efficiency; for COLD it is the COP of an electric chiller.
+BASELINE_EFFICIENCY: dict[EndUse, float] = {
+    EndUse.HEAT_HIGH_T: 0.88,   # industrial gas boiler
+    EndUse.HEAT_MED_T: 0.90,    # standard gas boiler
+    EndUse.HEAT_LOW_T: 0.92,    # condensing gas boiler
+    EndUse.COLD: 3.0,           # electric chiller COP
+}
+
+# Which resource provides the baseline supply for each thermal end-use.
+BASELINE_RESOURCE: dict[EndUse, ResourceType] = {
+    EndUse.HEAT_HIGH_T: ResourceType.NATURAL_GAS,
+    EndUse.HEAT_MED_T: ResourceType.NATURAL_GAS,
+    EndUse.HEAT_LOW_T: ResourceType.NATURAL_GAS,
+    EndUse.COLD: ResourceType.ELECTRICITY,
+}
+
+
 class OptVars:
     """Container for all optimization decision variables."""
     def __init__(self):
@@ -17,6 +39,9 @@ class OptVars:
         self.discharge: dict[str, list[pulp.LpVariable]] = {}
         self.buy: dict[str, list[pulp.LpVariable]] = {}
         self.sell: dict[str, list[pulp.LpVariable]] = {}
+        # Baseline thermal supply: thermal_buy[end_use_value][h]
+        # Represents energy supplied by conventional equipment (gas boiler / chiller)
+        self.thermal_buy: dict[str, list[pulp.LpVariable]] = {}
 
 
 def create_all_variables(data: AnalysisData, config: ScenarioConfig) -> OptVars:
@@ -35,6 +60,9 @@ def create_all_variables(data: AnalysisData, config: ScenarioConfig) -> OptVars:
 
     for resource in data.resources:
         _create_resource_variables(v, resource)
+
+    # Baseline thermal supply variables for each thermal demand
+    _create_thermal_buy_variables(v, data)
 
     return v
 
@@ -107,5 +135,27 @@ def _create_resource_variables(v: OptVars, resource: Resource) -> None:
     if resource.resource_type == ResourceType.ELECTRICITY:
         v.sell[rt] = [
             pulp.LpVariable(f"sell_{rt}_{h}", lowBound=0, cat="Continuous")
+            for h in range(HOURS)
+        ]
+
+
+def _create_thermal_buy_variables(v: OptVars, data: AnalysisData) -> None:
+    """Create baseline thermal supply variables for each thermal demand.
+
+    These represent purchasing thermal energy through conventional equipment
+    (gas boiler for heat, electric chiller for cold).  They act as a fallback
+    that guarantees feasibility for every thermal end-use, similar to how the
+    electricity grid makes the electricity balance always satisfiable.
+    """
+    thermal_end_uses = {EndUse.HEAT_HIGH_T, EndUse.HEAT_MED_T, EndUse.HEAT_LOW_T, EndUse.COLD}
+
+    for demand in data.demands:
+        if demand.end_use not in thermal_end_uses:
+            continue
+        eu = demand.end_use.value
+        if eu in v.thermal_buy:
+            continue  # already created
+        v.thermal_buy[eu] = [
+            pulp.LpVariable(f"thbuy_{eu}_{h}", lowBound=0, cat="Continuous")
             for h in range(HOURS)
         ]
