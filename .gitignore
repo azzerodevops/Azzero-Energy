@@ -46,3 +46,4 @@ Loghi e video/*.wav
 # Skills (installed separately)
 skills/
 skills-lock.json
+.vercel
