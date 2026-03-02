@@ -98,7 +98,7 @@ export function SiteForm({ organizationId, initialData }: SiteFormProps) {
             )} />
             {/* Ricerca indirizzo con autocompletamento */}
             <div className="sm:col-span-2 space-y-2">
-              <label className="text-sm font-medium leading-none">Cerca indirizzo *</label>
+              <label htmlFor="address-search" className="text-sm font-medium leading-none">Cerca indirizzo *</label>
               <AddressSearch
                 defaultValue={form.getValues("address") ? `${form.getValues("address")}, ${form.getValues("city") ?? ""}` : ""}
                 onSelect={(result) => {

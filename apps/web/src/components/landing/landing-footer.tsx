@@ -31,7 +31,7 @@ export function LandingFooter() {
               Come funziona
             </a>
             <a
-              href="#"
+              href="/privacy"
               className="text-sm text-white/60 transition-colors hover:text-white"
             >
               Privacy
